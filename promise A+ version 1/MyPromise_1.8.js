@@ -128,15 +128,4 @@ function resolvePromise(retPromise, returnData, resolve, reject) {
 
 module.exports = MyPromise
 
-// 测试
-const promise = new MyPromise((resolve, reject) => {
-  resolve('success')
-})
-promise.then().then().then(console.log)
-
-const promise1 = new MyPromise((resolve, reject) => {
-  reject('error')
-})
-promise1.then().then().then(undefined, console.log)
-
 // 下面开始完善细节
