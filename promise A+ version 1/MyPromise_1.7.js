@@ -118,5 +118,3 @@ function resolvePromise(retPromise, returnData, resolve, reject) {
 }
 
 module.exports = MyPromise
-
-// 下面实现 then 方法两个回调函数的选择性传递,不传递也不会影响执行。
