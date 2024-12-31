@@ -46,10 +46,11 @@ class MyPromise {
     if (this.status === PENDING) {
       this.status = REJECTED
       this.reason = reason // 保存失败后的原因
-    }
-    // 判断失败回调是否存在，如果存在就调用
-    while (this.onRejectedCallbacks.length) {
-      this.onRejectedCallbacks.shift()(reason)
+
+      // 判断失败回调是否存在，如果存在就调用
+      while (this.onRejectedCallbacks.length) {
+        this.onRejectedCallbacks.shift()(reason)
+      }
     }
   }
 

@@ -43,17 +43,18 @@ class MyPromise {
     if (this.status === PENDING) {
       this.status = REJECTED
       this.reason = reason // 保存失败后的原因
-    }
-    // 判断失败回调是否存在，如果存在就调用
-    while (this.onRejectedCallbacks.length) {
-      this.onRejectedCallbacks.shift()(reason)
+
+      // 判断失败回调是否存在，如果存在就调用
+      while (this.onRejectedCallbacks.length) {
+        this.onRejectedCallbacks.shift()(reason)
+      }
     }
   }
 
   then(onFulfilled, onRejected) {
     // 如果不传，就使用默认函数
-    onFulfilled = typeof onFulfilled === 'function' ? onFulfilled : value => value
-    onRejected =
+    const realOnFulfilled = typeof onFulfilled === 'function' ? onFulfilled : value => value
+    const realOnRejected =
       typeof onRejected === 'function'
         ? onRejected
         : reason => {
@@ -62,53 +63,56 @@ class MyPromise {
 
     // 为了链式调用这里直接创建一个 MyPromise，并在后面 return 出去
     const retPromise = new MyPromise((resolve, reject) => {
-      if (this.status === FULFILLED) {
+      const fulfilledMicrotask = () => {
         queueMicrotask(() => {
           try {
-            const returnData = onFulfilled(this.value)
+            const returnData = realOnFulfilled(this.value)
             resolvePromise(retPromise, returnData, resolve, reject)
           } catch (error) {
             reject(error)
           }
         })
-      } else if (this.status === REJECTED) {
+      }
+
+      const rejectedMicrotask = () => {
         queueMicrotask(() => {
           try {
             // 调用失败回调后，将返回值传递给下一个 then
-            const returnData = onRejected(this.reason)
+            const returnData = realOnRejected(this.reason)
             resolvePromise(retPromise, returnData, resolve, reject)
           } catch (error) {
             reject(error)
           }
         })
+      }
+
+      if (this.status === FULFILLED) {
+        fulfilledMicrotask()
+      } else if (this.status === REJECTED) {
+        rejectedMicrotask()
       } else if (this.status === PENDING) {
         // 因为不知道后面状态的变化情况，所以将成功回调和失败回调存储起来
-        this.onFulfilledCallbacks.push(() => {
-          // 确保执行顺序,在 resolve 后,执行回调数组中的方法,将回调任务放入微任务队列中
-          queueMicrotask(() => {
-            // pending 结束后执行成功回调,如果过程中抛出错误,也需要 reject,保证下一个 then 的第二个回调执行
-            try {
-              const returnData = onFulfilled(this.value)
-              // pending 结束后也需要返回一个 promise,所以需要传入 resolve 和 reject
-              resolvePromise(retPromise, returnData, resolve, reject)
-            } catch (error) {
-              reject(error)
-            }
-          })
-        })
-        this.onRejectedCallbacks.push(() => {
-          queueMicrotask(() => {
-            try {
-              const returnData = onRejected(this.reason)
-              resolvePromise(retPromise, returnData, resolve, reject)
-            } catch (error) {
-              reject(error)
-            }
-          })
-        })
+        this.onFulfilledCallbacks.push(fulfilledMicrotask)
+        this.onRejectedCallbacks.push(rejectedMicrotask)
       }
     })
+
     return retPromise
+  }
+
+  // resolve 静态方法
+  static resolve(parameter) {
+    // 如果传入 MyPromise 就直接返回
+    if (parameter instanceof MyPromise) {
+      return parameter
+    }
+
+    return new MyPromise(resolve => resolve(parameter))
+  }
+
+  // reject 静态方法
+  static reject(reason) {
+    return new MyPromise((resolve, reject) => reject(reason))
   }
 }
 
@@ -117,15 +121,70 @@ function resolvePromise(retPromise, returnData, resolve, reject) {
   if (retPromise === returnData) {
     return reject(new TypeError('Chaining cycle detected for promise #<Promise>'))
   }
-  // 如果是 MyPromise 实例对象
-  if (returnData instanceof MyPromise) {
-    // 调用实例的 then 方法的本质其实就是状态传递，等待 returnData 执行完毕
-    returnData.then(resolve, reject)
+
+  if (typeof returnData === 'object' || typeof returnData === 'function') {
+    // returnData 为 null 直接返回，走后面的逻辑会报错
+    if (returnData === null) {
+      return resolve(returnData)
+    }
+
+    let then
+    try {
+      // 把 returnData.then 赋值给 then
+      then = returnData.then
+    } catch (error) {
+      // 如果取 returnData.then 的值时抛出错误 error ，则以 error 为据因拒绝 promise
+      return reject(error)
+    }
+
+    // 如果 then 是函数
+    if (typeof then === 'function') {
+      let called = false
+      try {
+        then.call(
+          returnData, // this 指向 returnData
+          // 如果 resolvePromise 以值 x 为参数被调用，则运行 [[Resolve]](promise, x)
+          x => {
+            // 如果 resolvePromise 和 rejectPromise 均被调用，
+            // 或者被同一参数调用了多次，则优先采用首次调用并忽略剩下的调用
+            // 实现这条需要前面加一个变量 called
+            if (called) return
+            called = true
+            resolvePromise(retPromise, x, resolve, reject)
+          },
+          // 如果 rejectPromise 以据因 r 为参数被调用，则以据因 r 拒绝 promise
+          r => {
+            if (called) return
+            called = true
+            reject(r)
+          }
+        )
+      } catch (error) {
+        // 如果调用 then 方法抛出了异常 error：
+        // 如果 resolvePromise 或 rejectPromise 已经被调用，直接返回
+        if (called) return
+
+        // 否则以 error 为据因拒绝 promise
+        reject(error)
+      }
+    } else {
+      // 如果 then 不是函数，以 returnData 为参数执行 promise
+      resolve(returnData)
+    }
   } else {
+    // 如果 returnData 不为对象或者函数
     resolve(returnData)
   }
 }
 
-module.exports = MyPromise
+MyPromise.deferred = function () {
+  var result = {}
+  result.promise = new MyPromise(function (resolve, reject) {
+    result.resolve = resolve
+    result.reject = reject
+  })
 
-// 下面开始完善细节
+  return result
+}
+
+module.exports = MyPromise
