@@ -8,10 +8,7 @@ class MyPromise {
     try {
       executor(this.resolve, this.reject)
     } catch (error) {
-      // 如果在执行创建 promise 的同步代码中有错误，执行 reject，例如：
-      // const promise = new MyPromise((resolve, reject) => {
-      //   throw new Error('执行器错误')
-      // })
+      // 如果在执行创建 promise 的同步代码中有错误，执行 reject
       this.reject(error)
     }
   }
@@ -88,7 +85,6 @@ function resolvePromise(retPromise, returnData, resolve, reject) {
     // 调用实例的 then 方法的本质其实就是状态传递，等待 returnData 执行完毕
     returnData.then(resolve, reject)
   } else {
-    // 普通值
     resolve(returnData)
   }
 }
@@ -96,31 +92,3 @@ function resolvePromise(retPromise, returnData, resolve, reject) {
 module.exports = MyPromise
 
 // 测试
-const promise = new MyPromise((resolve, reject) => {
-  resolve('success')
-})
-
-// 第一个 then 方法中的错误在第二个 then 方法中捕获到
-promise
-  .then(value => {
-    console.log('first then value:', value)
-    throw new Error('then error')
-  })
-  .then(
-    value => {
-      console.log(1)
-      console.log(value)
-    },
-    reason => {
-      console.log(2)
-      console.log(reason.message)
-    }
-  )
-
-/**
- * 下面参考 fulfilled 状态下的处理方式,对 rejected 和 pending 状态进行改造,主要有:
- * 1. 增加异步状态下的链式调用
- * 2. 增加回调函数执行结果的判断
- * 3. 增加识别 Promise 是否返回自己
- * 4. 增加错误捕获
- */
